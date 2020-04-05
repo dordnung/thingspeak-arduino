@@ -77,6 +77,8 @@ class ThingSpeakClass
 	ThingSpeakClass()
 	{
 		resetWriteFields();
+		resetLastReadFields();
+		this->nextReadTimezone = "";
 	    this->lastReadStatus = OK_SUCCESS;
 	};
 
@@ -107,6 +109,8 @@ class ThingSpeakClass
 		this->setPort(THINGSPEAK_PORT_NUMBER);
 		
 		resetWriteFields();
+		resetLastReadFields();
+		this->nextReadTimezone = "";
 		this->lastReadStatus = OK_SUCCESS;
 		
 		return true;
@@ -137,6 +141,8 @@ class ThingSpeakClass
 		this->setClient(&client);
 		this->setPort(port);
 		resetWriteFields();
+		resetLastReadFields();
+		this->nextReadTimezone = "";
 		this->lastReadStatus = OK_SUCCESS;
 		return true;	
 	};
@@ -1186,6 +1192,251 @@ class ThingSpeakClass
 		return getJSONValueByKey(content, "created_at");
 	};
 
+	/**
+	 * @brief Read the latest entry from a private ThingSpeak channel. Use this to get all latest values at once.
+	 * @param channelNumber Channel number
+	 * @param readAPIKey Read API key associated with the channel.  *If you share code with others, do _not_ share this key*
+	 * @return HTTP status code of 200 if successful.  See getLastReadStatus() for other possible return values.
+	 * @code
+		void loop() {
+		  ThingSpeak.readLastEntry(myChannelNumber, myReadAPIKey);
+		  Serial.print("Latest field1 is: "); 
+		  Serial.println(getStringField(1));
+		  Serial.print("Latest status is: "); 
+		  Serial.print(getStatus());
+		  delay(30000);
+		}
+	 * @endcode
+	 */	
+	int readEntry(unsigned long channelNumber, const char * readAPIKey)
+	{
+		this->resetLastReadFields();
+		String content = readRaw(channelNumber, "/feeds/last.txt", readAPIKey);
+
+		if(getLastReadStatus() == OK_SUCCESS){
+			this->setLastReadFields(content);
+		}
+
+		return getLastReadStatus();
+	};
+
+	/**
+	 * @brief Read the latest entry from a public ThingSpeak channel. Use this to get all latest values at once.
+	 * @param channelNumber Channel number
+	 * @return HTTP status code of 200 if successful.  See getLastReadStatus() for other possible return values.
+	 * @code
+	    void loop() {
+	     ThingSpeak.readLastEntry(myChannelNumber);
+	     Serial.print("Latest field1 is: ");
+	     Serial.print(getStringField(1));
+		 Serial.print("Latest status is: "); 
+		 Serial.print(getStatus());
+	     delay(30000);
+	    }
+	 * @endcode
+	 */
+	int readEntry(unsigned long channelNumber) {
+		return this->readEntry(channelNumber, NULL);
+	};
+
+	/**
+	 * @brief Gets the latest string from a ThingSpeak channel. readEntry() has to be called before
+	 * @param field Field number (1-8) within the channel to get from.
+	 * @return Value read (UTF8 string), or empty string if there is an error.  Use getLastReadStatus() to get more specific information.
+	 * @see readEntry()
+	 * @code
+		void loop() {
+		  ThingSpeak.readEntry(myChannelNumber, myReadAPIKey);
+		  String message = ThingSpeak.getStringField(1);
+		  Serial.print("Latest message is: "); 
+		  Serial.println(message);
+		  delay(30000);
+		}
+	 * @endcode
+	 */
+	String getStringField(unsigned int field)
+	{
+		if(field < FIELDNUM_MIN || field > FIELDNUM_MAX)
+		{
+			this->lastReadStatus = ERR_INVALID_FIELD_NUM;
+			return("");
+		}
+		#ifdef PRINT_DEBUG_MESSAGES
+			Serial.print("ts::getStringField(field: "); Serial.print(field); Serial.println(")");
+		#endif
+		return this->lastReadField[field];
+	}
+
+
+	/**
+	 * @brief Gets the latest float from a ThingSpeak channel. readEntry() has to be called before
+	 * @param field Field number (1-8) within the channel to get from.
+	 * @return Value read, or 0 if the field is text or there is an error.  Use getLastReadStatus() to get more specific information.  Note that NAN, INFINITY, and -INFINITY are valid results.
+	 * @see readEntry()
+	 * @code
+		void loop() {
+		  ThingSpeak.readEntry(myChannelNumber, myReadAPIKey);
+		  float voltage = ThingSpeak.getFloatField(1);
+		  Serial.print("Latest voltage is: "); 
+		  Serial.print(voltage);
+		  Serial.println("V"); 
+		  delay(30000);
+		}
+	 * @endcode
+	 */
+	float getFloatField(unsigned int field)
+	{
+		return convertStringToFloat(getStringField(field));
+	};
+
+
+	/**
+	 * @brief Get the latest long from a ThingSpeak channel. readEntry() has to be called before.
+	 * @param field Field number (1-8) within the channel to get from.
+	 * @return Value read, or 0 if the field is text or there is an error.  Use getLastReadStatus() to get more specific information.
+	 * @see readEntry()
+	 * @code
+		void loop() {
+		  ThingSpeak.readEntry(myChannelNumber, myReadAPIKey);
+		  long value = ThingSpeak.getLongField(1);
+		  Serial.print("Latest value is: "); 
+		  Serial.print(value);
+		  delay(30000);
+		}
+	 * @endcode
+	 */
+	long getLongField(unsigned int field)
+	{
+		// Note that although the function is called "toInt" it really returns a long.
+		return getStringField(field).toInt();
+	}
+
+
+	/**
+	 * @brief Get the latest int from a ThingSpeak channel. readEntry() has to be called before.
+	 * @param field Field number (1-8) within the channel to get from.
+	 * @return Value read, or 0 if the field is text or there is an error.  Use getLastReadStatus() to get more specific information.
+	 * @remark If the value returned is out of range for an int, the result is undefined.
+	 * @see readEntry()
+	 * @code
+		void loop() {
+		  ThingSpeak.readEntry(myChannelNumber, myReadAPIKey);
+		  int value = ThingSpeak.getIntField(1);
+		  Serial.print("Latest value is: "); 
+		  Serial.print(value);
+		  delay(30000);
+		}
+	 * @endcode
+	 */
+	int getIntField(unsigned int field)
+	{
+		return getLongField(field);
+	}
+
+	/**
+	 * @brief Get the latest status from a ThingSpeak channel. readEntry() has to be called before.
+	 * @return Value read (UTF8 string). An empty string is returned if there was no status written to the channel or in case of an error.  Use getLastReadStatus() to get more specific information.
+	 * @see readEntry()
+	 * @code
+		void loop() {
+		  ThingSpeak.readEntry(myChannelNumber, myReadAPIKey);
+		  String value = ThingSpeak.getStatus();
+		  Serial.print("Latest status is: "); 
+		  Serial.print(value);
+		  delay(30000);
+		}
+	 * @endcode
+	 */	
+	String getStatus()
+	{
+		return this->lastReadStatusField;
+	};
+
+	/**
+	 * @brief Get the created-at timestamp associated with the latest update to a ThingSpeak channel
+	 * @return Value read (UTF8 string). An empty string is returned if there was no created-at timestamp written to the channel or in case of an error.  Use getLastReadStatus() to get more specific information.
+	 * @see readEntry()
+	 * @code
+		void loop() {
+		  ThingSpeak.readEntry(myChannelNumber, myReadAPIKey);
+		  String value = ThingSpeak.getCreatedAt();
+		  Serial.print("Latest update timestamp is: "); 
+		  Serial.print(value);
+		  delay(30000);
+		}
+	 * @endcode
+	 */	
+	String getCreatedAt()
+	{
+		return this->lastReadCreatedAtField;
+	};
+	
+	/**
+	 * @brief Set the timezone to use for the next reading.
+	 * @param timezone Desired timezone to be used with the next read as a char. The timezone must be one of these: https://de.mathworks.com/help/thingspeak/time-zones-reference.html
+	 * @return HTTP status code of 200 if successful.  See getLastReadStatus() for other possible return values.
+	 * @code
+		void loop() {
+		  ThingSpeak.setReadTimezone("Europe/London");
+		  String value = ThingSpeak.readCreatedAt(myChannelNumber);
+		  Serial.print("Latest update timestamp is: "); 
+		  Serial.print(value);
+		  delay(30000);
+		}
+	 * @endcode
+	 */
+	int setReadTimezone(const char * timezone)
+	{
+		return setReadTimezone(String(timezone));
+	}
+	
+	/**
+	 * @brief Set the timezone to use for the next reading.
+	 * @param timezone Desired timezone to be used with the next read as a String. The timezone must be one of these: https://de.mathworks.com/help/thingspeak/time-zones-reference.html
+	 * @return HTTP status code of 200 if successful.  See getLastReadStatus() for other possible return values.
+	 * @code
+		void loop() {
+		  ThingSpeak.setReadTimezone("Europe/London");
+		  String value = ThingSpeak.readCreatedAt(myChannelNumber);
+		  Serial.print("Latest update timestamp is: "); 
+		  Serial.print(value);
+		  delay(30000);
+		}
+	 * @endcode
+	 */
+	int setReadTimezone(String timezone)
+	{
+		#ifdef PRINT_DEBUG_MESSAGES
+			Serial.print("ts::setReadTimezone(timezone: "); Serial.print(timezone); Serial.println("\")");
+		#endif
+		
+		// Max # bytes for ThingSpeak field is 255 (UTF-8)
+		if(timezone.length() > FIELDLENGTH_MAX) return ERR_OUT_OF_RANGE;
+		this->nextReadTimezone = timezone;
+		
+		return OK_SUCCESS;
+	}
+	
+	/**
+	 * @brief Resets the timezone to use for the next reading.
+	 * @return HTTP status code of 200 if successful.  See getLastReadStatus() for other possible return values.
+	 * @code
+		void loop() {
+		  ThingSpeak.setReadTimezone("Europe/London");
+		  String value = ThingSpeak.readCreatedAt(myChannelNumber);
+		  Serial.print("Latest update timestamp is: "); 
+		  Serial.print(value);
+		  
+		  ThingSpeak.resetReadTimezone();
+		  
+		  delay(30000);
+		}
+	 * @endcode
+	 */
+	int resetReadTimezone()
+	{
+		return setReadTimezone("");
+	}
 	
 	/*
 	Function: readCreatedAt
@@ -1267,6 +1518,18 @@ class ThingSpeakClass
 		String URL = String("/channels/");
 		URL.concat(channelNumber);
 		URL.concat(URLSuffix);
+		
+		// Append timezone if given
+		if (this->nextReadTimezone.length() > 0) {
+			if (URL.indexOf('?', 0) == -1) {
+				URL.concat("?");
+			} else {
+				URL.concat("&");
+			}
+			
+			URL.concat("timezone=");
+			URL.concat(this->nextReadTimezone);
+		}
 		
 		#ifdef PRINT_DEBUG_MESSAGES
 			Serial.print("               GET \"");Serial.print(URL);Serial.println("\"");
@@ -1505,6 +1768,10 @@ private:
 	String nextWriteTwitter;
 	String nextWriteTweet;
 	String nextWriteCreatedAt;
+	String lastReadField[8];
+	String lastReadStatusField;
+	String lastReadCreatedAtField;
+	String nextReadTimezone;
 
 	bool connectThingSpeak()
 	{
@@ -1674,6 +1941,26 @@ private:
 		this->nextWriteTwitter = "";
 		this->nextWriteTweet = "";
 		this->nextWriteCreatedAt = "";
+	};
+
+	void resetLastReadFields()
+	{
+		for(size_t iField = 0; iField < FIELDNUM_MAX; iField++)
+		{
+			this->lastReadField[iField] = "";
+		}
+		this->lastReadStatusField = "";
+		this->lastReadCreatedAtField = "";
+	};
+
+	void setLastReadFields(String content)
+	{
+		for(size_t iField = 0; iField < FIELDNUM_MAX; iField++)
+		{
+			this->lastReadField[iField] = getJSONValueByKey(content, String("field") + iField);
+		}
+		this->lastReadStatusField = getJSONValueByKey(content, "status");
+		this->lastReadCreatedAtField = getJSONValueByKey(content, "created_at");
 	};
 };
 
