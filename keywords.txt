@@ -16,7 +16,7 @@ readLongField	KEYWORD2
 readStringField	KEYWORD2
 readStatus	KEYWORD2
 readCreatedAt	KEYWORD2
-readEntry	KEYWORD2
+readMultipleFields	KEYWORD2
 getFloatField	KEYWORD2
 getIntField	KEYWORD2
 getLongField	KEYWORD2
