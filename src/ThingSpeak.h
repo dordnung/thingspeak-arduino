@@ -1132,10 +1132,10 @@
             #endif
 
             // Max # bytes for ThingSpeak field is 255 (UTF-8)
-            if(timezone.length() > FIELDLENGTH_MAX) return ERR_OUT_OF_RANGE;
+            if(timezone.length() > FIELDLENGTH_MAX) return TS_ERR_OUT_OF_RANGE;
             this->nextReadTimezone = timezone;
 
-            return OK_SUCCESS;
+            return TS_OK_SUCCESS;
         }
 
         /*
@@ -1668,7 +1668,7 @@
             // make sure all of the HTTP request is pushed out of the buffer before looking for a response
             this->client->flush();
             
-            long timeoutTime = millis() + TIMEOUT_MS_SERVERRESPONSE;
+            unsigned long timeoutTime = millis() + TIMEOUT_MS_SERVERRESPONSE;
             
             while(this->client-> available() < 17){
                 delay(2);
